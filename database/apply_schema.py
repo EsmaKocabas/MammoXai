@@ -1,7 +1,3 @@
-"""
-MammoXai - NeonDB schema uygulayici
-DATABASE_URL .env dosyasindan okunur.
-"""
 import os
 import sys
 from dotenv import load_dotenv
