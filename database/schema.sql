@@ -113,26 +113,20 @@ CREATE TABLE IF NOT EXISTS analyses (
     status          VARCHAR(30) NOT NULL DEFAULT 'pending'
                     CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
 
-    -- Model Çıktıları
-    malignancy_probability  DECIMAL(5,4),
+    -- EfficientNet-B4 Model Çıktıları (sınıflandırma)
+    malignancy_probability  DECIMAL(5,4),               -- 0.0000 – 1.0000 arası ham olasılık
     risk_level              VARCHAR(20)
                             CHECK (risk_level IN ('Düşük risk', 'İnceleniyor', 'Yüksek risk')),
-    classification_label    VARCHAR(50),
-    lesion_location         VARCHAR(100),
-    model_confidence        DECIMAL(5,4),
+    classification_label    VARCHAR(50),                -- 'Malign şüpheli', 'Benign', 'Normal'
+    model_confidence        DECIMAL(5,4),               -- modelin güven skoru
 
-    -- Kullanılan Modeller
-    detection_model         VARCHAR(50),
-    classification_model    VARCHAR(50),
-    model_version           VARCHAR(30),
+    -- Model Bilgisi
+    classification_model    VARCHAR(50) DEFAULT 'EfficientNet-B4',
+    model_version           VARCHAR(30),                -- checkpoint/versiyon adı
 
     -- XAI Çıktıları (Grad-CAM++)
-    xai_heatmap_url         TEXT,
-    xai_explanation         TEXT,
-
-    -- YOLO Tespit Kutuları
-    detection_boxes         JSONB,
-    -- Örnek: [{"x1":120,"y1":80,"x2":200,"y2":160,"confidence":0.91,"class":"mass"}]
+    xai_heatmap_url         TEXT,                       -- ısı haritası görüntüsünün URL'i
+    xai_explanation         TEXT                        -- varsa metinsel açıklama
 
     -- Doktor Notu / Klinik Karar
     doctor_notes            TEXT,
