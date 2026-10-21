@@ -1,7 +1,14 @@
-import psycopg2, sys
+import os
+import sys
+from dotenv import load_dotenv
+import psycopg2
+
 sys.stdout.reconfigure(encoding='utf-8')
 
-DB = "postgresql://neondb_owner:npg_hziCu7SkT8jA@ep-wild-meadow-b4t47q75-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+load_dotenv()
+DB = os.getenv("DATABASE_URL")
+if not DB:
+    raise RuntimeError(".env dosyasinda DATABASE_URL bulunamadi!")
 
 conn = psycopg2.connect(DB)
 conn.autocommit = True
