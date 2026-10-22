@@ -11,15 +11,15 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 // Kayıt Ol (Register - Doktor Kaydı)
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { 
-      email, 
-      password, 
-      full_name, 
+    const {
+      email,
+      password,
+      full_name,
       name, // Alternatif alan adı uyumluluğu için
-      title, 
-      specialty, 
-      hospital, 
-      phone 
+      title,
+      specialty,
+      hospital,
+      phone
     } = req.body;
 
     const doctorName = full_name || name;
@@ -294,4 +294,4 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
     console.error('[UpdateProfile Error]:', error);
     res.status(500).json({ error: 'Profil güncellenirken sunucu hatası oluştu.' });
   }
-};
+};
