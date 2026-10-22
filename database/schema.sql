@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS analyses (
 
     -- XAI Çıktıları (Grad-CAM++)
     xai_heatmap_url         TEXT,                       -- ısı haritası görüntüsünün URL'i
-    xai_explanation         TEXT                        -- varsa metinsel açıklama
+    xai_explanation         TEXT,                       -- varsa metinsel açıklama
 
     -- Doktor Notu / Klinik Karar
     doctor_notes            TEXT,
