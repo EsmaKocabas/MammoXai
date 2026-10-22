@@ -203,3 +203,25 @@ BEGIN
     RETURN proto;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- 9. BİLDİRİMLER (notifications) - Triyaj & Push Bildirimler
+-- ============================================================
+CREATE TABLE IF NOT EXISTS notifications (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    doctor_id       UUID        NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    title           VARCHAR(200) NOT NULL,
+    message         TEXT        NOT NULL,
+    type            VARCHAR(30) NOT NULL DEFAULT 'info'
+                    CHECK (type IN ('alert', 'warning', 'info', 'success')),
+    link            TEXT,                           -- örn: /analyses/:id veya /patients/:id
+    related_id      UUID,                           -- varsa analiz veya hasta ID'si
+    is_read         BOOLEAN     NOT NULL DEFAULT FALSE,
+    read_at         TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_doctor_id ON notifications (doctor_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_is_read   ON notifications (doctor_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_created   ON notifications (created_at DESC);
+

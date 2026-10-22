@@ -6,18 +6,23 @@ import dotenv from 'dotenv';
 import path from 'path';
 import multer from 'multer';
 import { fileURLToPath } from 'url';
-import { pool } from './config/db.js';
+import { pool, initDatabase } from './config/db.js';
 import { UPLOADS_DIR } from './config/paths.js';
 import { UploadError } from './middlewares/upload.middleware.js';
 import authRoutes from './routes/auth.routes.js';
 import patientRoutes from './routes/patient.routes.js';
 import analysisRoutes from './routes/analysis.routes.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
+import notificationRoutes from './routes/notification.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config();
+
+// Veritabanı tablolarının hazır olduğundan emin ol
+initDatabase().catch((err) => console.error('[DB Init Error]:', err));
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -40,6 +45,8 @@ app.use(
 app.use('/api/auth', authRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/analyses', analysisRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Sağlık kontrolü & DB bağlantı testi
 app.get('/health', async (_req: Request, res: Response) => {
@@ -71,6 +78,8 @@ app.get('/', (_req: Request, res: Response) => {
       auth: '/api/auth',
       patients: '/api/patients',
       analyses: '/api/analyses',
+      dashboard: '/api/dashboard/stats',
+      notifications: '/api/notifications',
     },
   });
 });

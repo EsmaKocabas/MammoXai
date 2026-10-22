@@ -1,5 +1,12 @@
 import { Router } from 'express';
-import { createAnalysis, listAnalyses, getAnalysis } from '../controllers/analysis.controller.js';
+import {
+  createAnalysis,
+  listAnalyses,
+  getAnalysis,
+  reviewAnalysis,
+  deleteAnalysis,
+  getAnalysisReport,
+} from '../controllers/analysis.controller.js';
 import { verifyToken } from '../middlewares/auth.middleware.js';
 import { uploadMammogram } from '../middlewares/upload.middleware.js';
 
@@ -11,5 +18,8 @@ router.use(verifyToken);
 router.post('/', uploadMammogram, createAnalysis);
 router.get('/', listAnalyses);
 router.get('/:id', getAnalysis);
+router.get('/:id/report', getAnalysisReport);
+router.put('/:id/review', reviewAnalysis);
+router.delete('/:id', deleteAnalysis);
 
 export default router;

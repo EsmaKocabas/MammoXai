@@ -4,9 +4,11 @@ import path from 'path';
 import { PoolClient } from 'pg';
 import { z } from 'zod';
 import { pool } from '../config/db.js';
-import { HEATMAP_DIR } from '../config/paths.js';
+import { HEATMAP_DIR, UPLOADS_DIR } from '../config/paths.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { requestPrediction } from '../services/ai.service.js';
+import { createNotification } from '../services/notification.service.js';
+import { generateAnalysisPdfBuffer } from '../services/pdf.service.js';
 import { DATE_REGEX, dropEmptyStrings, formatZodError } from '../utils/validation.js';
 
 const createAnalysisSchema = z.object({
@@ -28,7 +30,8 @@ const ANALYSIS_SELECT = `
     a.doctor_notes, a.final_decision, a.is_reviewed, a.reviewed_at,
     a.requested_at, a.completed_at,
     json_build_object(
-      'id', p.id, 'tc_no', p.tc_no, 'first_name', p.first_name, 'last_name', p.last_name
+      'id', p.id, 'tc_no', p.tc_no, 'first_name', p.first_name, 'last_name', p.last_name,
+      'date_of_birth', p.date_of_birth, 'gender', p.gender, 'phone', p.phone
     ) AS patient,
     json_build_object(
       'id', i.id, 'url', i.storage_url, 'original_filename', i.original_filename,
@@ -102,7 +105,7 @@ export const createAnalysis = async (req: AuthRequest, res: Response): Promise<v
     return;
   }
 
-  // 1) Görüntü + analiz kaydını tek transaction'da oluştur
+  // Görüntü ve analiz kaydını veritabanında oluştur
   const client = await pool.connect();
   let analysis: { id: string; protocol_no: string };
   try {
@@ -129,7 +132,7 @@ export const createAnalysis = async (req: AuthRequest, res: Response): Promise<v
     client.release();
   }
 
-  // 2) AI servisini çağır, ısı haritasını kaydet, sonucu yaz
+  // Yapay zeka servisinden tahmin alıp ısı haritası ve analiz sonuçlarını kaydet
   const heatmapFilename = `${analysis.id}.jpg`;
   const heatmapPath = path.join(HEATMAP_DIR, heatmapFilename);
   try {
@@ -168,20 +171,54 @@ export const createAnalysis = async (req: AuthRequest, res: Response): Promise<v
     console.error('[Analysis Error]:', error);
     await removeFile(heatmapPath);
     await pool.query(`UPDATE analyses SET status = 'failed' WHERE id = $1`, [analysis.id]);
-    res.status(502).json({
-      error: 'Görüntü kaydedildi ancak AI analizi başarısız oldu.',
-      analysis_id: analysis.id,
-      protocol_no: analysis.protocol_no,
-      status: 'failed',
-      ...(process.env.NODE_ENV !== 'production' && {
-        detail: error instanceof Error ? error.message : String(error),
-      }),
-    });
+
+    createNotification({
+      doctorId,
+      title: '⚠️ Analiz İşlemi Başarısız Oldu',
+      message: `${analysis.protocol_no} protokol nolu mamografi analizi işlenirken hata oluştu.`,
+      type: 'warning',
+      link: '/analyses',
+      relatedId: analysis.id,
+    }).catch(() => undefined);
+
+    if (!res.headersSent) {
+      res.status(502).json({
+        error: 'Görüntü kaydedildi ancak AI analizi başarısız oldu.',
+        analysis_id: analysis.id,
+        protocol_no: analysis.protocol_no,
+        status: 'failed',
+        ...(process.env.NODE_ENV !== 'production' && {
+          detail: error instanceof Error ? error.message : String(error),
+        }),
+      });
+    }
     return;
   }
 
   const result = await pool.query(`${ANALYSIS_SELECT} WHERE a.id = $1`, [analysis.id]);
-  res.status(201).json({ analysis: result.rows[0] });
+  const createdAnalysis = result.rows[0];
+
+  // Doktor için anlık Push Bildirimi üret ve ilet
+  const isHighRisk = createdAnalysis.risk_level === 'Yüksek risk';
+  const patientName = `${createdAnalysis.patient.first_name} ${createdAnalysis.patient.last_name}`;
+  const probPercent = createdAnalysis.malignancy_probability !== null
+    ? `%${(Number(createdAnalysis.malignancy_probability) * 100).toFixed(1)}`
+    : '';
+
+  createNotification({
+    doctorId,
+    title: isHighRisk ? '🚨 Kritik Triyaj Uyarısı: Yüksek Risk!' : '✅ Mamografi Analizi Tamamlandı',
+    message: isHighRisk
+      ? `${patientName} (${createdAnalysis.protocol_no}) isimli hastada ${probPercent} malignite şüphesi tespit edildi. Öncelikli inceleme önerilir.`
+      : `${patientName} (${createdAnalysis.protocol_no}) mamografi analizi ve Grad-CAM++ haritası hazırlandı.`,
+    type: isHighRisk ? 'alert' : 'info',
+    link: `/analyses/${analysis.id}`,
+    relatedId: analysis.id,
+  }).catch((err) => console.error('[Push Notification Error]:', err));
+
+  if (!res.headersSent) {
+    res.status(201).json({ analysis: createdAnalysis });
+  }
 };
 
 // Doktorun Analizlerini Listele (?patient_id=&page=&limit=)
@@ -233,3 +270,140 @@ export const getAnalysis = async (req: AuthRequest, res: Response): Promise<void
 
   res.json({ analysis: result.rows[0] });
 };
+
+// Klinik Değerlendirme & Karar Girişi
+const reviewAnalysisSchema = z.object({
+  final_decision: z.enum([
+    'Benign', 'Malign', 'Şüpheli - Biyopsi Önerilir', 'Normal', 'Takip Gerekli',
+  ], { message: 'Geçersiz karar değeri.' }),
+  doctor_notes: z.string().max(2000).optional(),
+});
+
+export const reviewAnalysis = async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = z.uuid().safeParse(req.params.id);
+  if (!id.success) {
+    res.status(400).json({ error: 'Geçersiz analiz ID.' });
+    return;
+  }
+
+  const parsed = reviewAnalysisSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Geçersiz değerlendirme bilgileri.', details: formatZodError(parsed.error) });
+    return;
+  }
+
+  const { final_decision, doctor_notes } = parsed.data;
+
+  const update = await pool.query(
+    `UPDATE analyses SET
+       final_decision = $2,
+       doctor_notes = $3,
+       is_reviewed = TRUE,
+       reviewed_at = NOW()
+     WHERE id = $1 AND doctor_id = $4
+     RETURNING id`,
+    [id.data, final_decision, doctor_notes ?? null, req.user!.id]
+  );
+
+  if (update.rows.length === 0) {
+    res.status(404).json({ error: 'Analiz bulunamadı veya yetkiniz yok.' });
+    return;
+  }
+
+  const result = await pool.query(`${ANALYSIS_SELECT} WHERE a.id = $1`, [id.data]);
+  res.json({ message: 'Değerlendirme kaydedildi.', analysis: result.rows[0] });
+};
+
+// Analiz ve İlişkili Görüntüleri Silme
+export const deleteAnalysis = async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = z.uuid().safeParse(req.params.id);
+  if (!id.success) {
+    res.status(400).json({ error: 'Geçersiz analiz ID.' });
+    return;
+  }
+
+  // Silmeden önce dosya yollarını al
+  const existing = await pool.query(
+    `SELECT a.id, a.xai_heatmap_url, i.storage_url, a.image_id
+     FROM analyses a
+     JOIN mammography_images i ON i.id = a.image_id
+     WHERE a.id = $1 AND a.doctor_id = $2`,
+    [id.data, req.user!.id]
+  );
+
+  if (existing.rows.length === 0) {
+    res.status(404).json({ error: 'Analiz bulunamadı veya yetkiniz yok.' });
+    return;
+  }
+
+  const row = existing.rows[0];
+
+  // Transaction: analiz ve bağlı görüntü kaydını sil
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM analyses WHERE id = $1', [id.data]);
+    await client.query('DELETE FROM mammography_images WHERE id = $1', [row.image_id]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  // Dosyaları sil (DB başarılı olduktan sonra, hata olursa yoksay)
+  if (row.storage_url) {
+    const mammoPath = path.join(UPLOADS_DIR, row.storage_url.replace(/^\/uploads\//, ''));
+    await removeFile(mammoPath);
+  }
+  if (row.xai_heatmap_url) {
+    const heatmapPath = path.join(UPLOADS_DIR, row.xai_heatmap_url.replace(/^\/uploads\//, ''));
+    await removeFile(heatmapPath);
+  }
+
+  res.json({ message: 'Analiz ve ilişkili görüntüler silindi.' });
+};
+
+// PDF Rapor Üretimi ve İndirme
+export const getAnalysisReport = async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = z.uuid().safeParse(req.params.id);
+  if (!id.success) {
+    res.status(400).json({ error: 'Geçersiz analiz ID.' });
+    return;
+  }
+
+  // Analiz ve hasta bilgilerini al
+  const analysisRes = await pool.query(`${ANALYSIS_SELECT} WHERE a.id = $1 AND a.doctor_id = $2`, [
+    id.data,
+    req.user!.id,
+  ]);
+
+  if (analysisRes.rows.length === 0) {
+    res.status(404).json({ error: 'Analiz bulunamadı veya yetkiniz yok.' });
+    return;
+  }
+
+  const analysis = analysisRes.rows[0];
+
+  // Doktor bilgilerini al
+  const doctorRes = await pool.query(
+    'SELECT full_name, title, specialty, hospital FROM doctors WHERE id = $1',
+    [req.user!.id]
+  );
+  const doctor = doctorRes.rows[0] || { full_name: 'Uzm. Dr.' };
+
+  try {
+    const pdfBuffer = await generateAnalysisPdfBuffer({ analysis, doctor });
+
+    const safeProtocol = (analysis.protocol_no || 'rapor').replace(/[^a-zA-Z0-9_-]/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="MammoXai_${safeProtocol}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.end(pdfBuffer);
+  } catch (error) {
+    console.error('[PDF Report Error]:', error);
+    res.status(500).json({ error: 'PDF raporu oluşturulurken bir hata meydana geldi.' });
+  }
+};
+

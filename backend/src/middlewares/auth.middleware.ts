@@ -13,14 +13,19 @@ export interface AuthRequest extends Request {
 }
 
 export const verifyToken = (req: AuthRequest, res: Response, next: NextFunction): void => {
-  const authHeader = req.header('Authorization');
+  let token: string | undefined;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const authHeader = req.header('Authorization');
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (typeof req.query.token === 'string') {
+    token = req.query.token;
+  }
+
+  if (!token) {
     res.status(401).json({ error: 'Yetkilendirme başarısız. Geçerli bir Bearer token bulunamadı.' });
     return;
   }
-
-  const token = authHeader.split(' ')[1];
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as DoctorPayload;

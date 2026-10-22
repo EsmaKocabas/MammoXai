@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/db.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
+import { validatePassword } from '../utils/validation.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'gizli_anahtarim';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
@@ -23,14 +24,32 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     const doctorName = full_name || name;
 
-    // Temel doğrulamalar
-    if (!email || !password || !doctorName) {
-      res.status(400).json({ error: 'E-posta, şifre ve isim alanları zorunludur.' });
+    // Tüm alanların doldurulması zorunludur (hiçbiri boş bırakılamaz)
+    if (
+      !email?.trim() ||
+      !password ||
+      !doctorName?.trim() ||
+      !title?.trim() ||
+      !specialty?.trim() ||
+      !hospital?.trim() ||
+      !phone?.trim()
+    ) {
+      res.status(400).json({
+        error: 'Tüm alanların doldurulması zorunludur: E-posta, şifre, isim, unvan, uzmanlık alanı, hastane ve telefon boş bırakılamaz.',
+      });
       return;
     }
 
-    if (password.length < 6) {
-      res.status(400).json({ error: 'Şifre en az 6 karakter olmalıdır.' });
+    // E-posta format kontrolü
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      res.status(400).json({ error: 'Lütfen geçerli bir e-posta adresi giriniz.' });
+      return;
+    }
+
+    const passValidation = validatePassword(password);
+    if (!passValidation.valid) {
+      res.status(400).json({ error: passValidation.message });
       return;
     }
 
@@ -68,10 +87,10 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       email.toLowerCase().trim(),
       passwordHash,
       doctorName.trim(),
-      title || null,
-      specialty || null,
-      hospital || null,
-      phone || null,
+      title.trim(),
+      specialty.trim(),
+      hospital.trim(),
+      phone.trim(),
     ]);
 
     const newDoctor = result.rows[0];
@@ -186,3 +205,93 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
     res.status(500).json({ error: 'Profil bilgileri alınırken hata oluştu.' });
   }
 };
+
+// Doktor Profilini Güncelleme / Şifre Değiştirme (PUT /api/auth/profile)
+export const updateProfile = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const doctorId = req.user?.id;
+    if (!doctorId) {
+      res.status(401).json({ error: 'Yetkisiz erişim.' });
+      return;
+    }
+
+    const {
+      full_name,
+      title,
+      specialty,
+      hospital,
+      phone,
+      profile_photo_url,
+      current_password,
+      new_password,
+    } = req.body;
+
+    // Şifre değiştirme talebi varsa mevcut şifreyi doğrula
+    let newPasswordHash: string | null = null;
+    if (new_password) {
+      if (!current_password) {
+        res.status(400).json({ error: 'Şifrenizi değiştirmek için mevcut şifrenizi girmelisiniz.' });
+        return;
+      }
+      const passValidation = validatePassword(new_password);
+      if (!passValidation.valid) {
+        res.status(400).json({ error: passValidation.message });
+        return;
+      }
+
+      const docRes = await pool.query('SELECT password_hash FROM doctors WHERE id = $1', [doctorId]);
+      if (docRes.rows.length === 0) {
+        res.status(404).json({ error: 'Doktor bulunamadı.' });
+        return;
+      }
+
+      const isMatch = await bcrypt.compare(current_password, docRes.rows[0].password_hash);
+      if (!isMatch) {
+        res.status(400).json({ error: 'Mevcut şifre hatalı.' });
+        return;
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      newPasswordHash = await bcrypt.hash(new_password, salt);
+    }
+
+    // Dinamik alan güncelleme
+    const updates: Record<string, any> = {};
+    if (full_name !== undefined && full_name.trim()) updates.full_name = full_name.trim();
+    if (title !== undefined) updates.title = title ? title.trim() : null;
+    if (specialty !== undefined) updates.specialty = specialty ? specialty.trim() : null;
+    if (hospital !== undefined) updates.hospital = hospital ? hospital.trim() : null;
+    if (phone !== undefined) updates.phone = phone ? phone.trim() : null;
+    if (profile_photo_url !== undefined) updates.profile_photo_url = profile_photo_url ? profile_photo_url.trim() : null;
+    if (newPasswordHash) updates.password_hash = newPasswordHash;
+
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({ error: 'Güncellenecek herhangi bir bilgi belirtilmedi.' });
+      return;
+    }
+
+    const setClauses: string[] = [];
+    const values: any[] = [doctorId];
+
+    Object.entries(updates).forEach(([col, val]) => {
+      values.push(val);
+      setClauses.push(`${col} = $${values.length}`);
+    });
+
+    const updateQuery = `
+      UPDATE doctors
+      SET ${setClauses.join(', ')}
+      WHERE id = $1
+      RETURNING id, email, full_name, title, specialty, hospital, phone, profile_photo_url, updated_at
+    `;
+
+    const result = await pool.query(updateQuery, values);
+    res.json({
+      message: 'Profil bilgileri başarıyla güncellendi.',
+      doctor: result.rows[0],
+    });
+  } catch (error) {
+    console.error('[UpdateProfile Error]:', error);
+    res.status(500).json({ error: 'Profil güncellenirken sunucu hatası oluştu.' });
+  }
+};
