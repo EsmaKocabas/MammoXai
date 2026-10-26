@@ -20,6 +20,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -62,19 +63,45 @@ export default function LoginPage() {
             />
           </div>
 
+
+
           <div className="field">
             <label htmlFor="login-password">Şifre</label>
             <div className="input-with-icon">
               <input
                 id="login-password"
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
-              <span className="input-icon"><LockIcon /></span>
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? 'Şifreyi gizle' : 'Şifreyi göster'}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? (
+                  <svg viewBox="0 0 24 24" width="20" height="20"
+                    fill="none" stroke="currentColor" strokeWidth="1.8"
+                    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M3 3l18 18" />
+                    <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                    <path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c5 0 8.5 4.5 9.5 7-.4 1-1.1 2-2 2.9" />
+                    <path d="M6.2 6.2C3.8 7.7 2.1 10 1.5 12c1 2.5 4.5 7 10.5 7 1.1 0 2.1-.2 3-.5" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="20" height="20"
+                    fill="none" stroke="currentColor" strokeWidth="1.8"
+                    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
 
@@ -88,9 +115,11 @@ export default function LoginPage() {
               />
               Beni hatırla
             </label>
-            <a id="login-forgot" className="link" href="#" onClick={(e) => e.preventDefault()}>
+
+            <Link id="login-forgot" className="link" to="/forgot-password">
               Şifremi unuttum
-            </a>
+            </Link>
+
           </div>
 
           {error && (

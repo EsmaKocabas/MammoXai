@@ -93,3 +93,10 @@ export const register = (data: RegisterData) =>
     body: JSON.stringify(data),
   });
 
+export const requestPasswordReset = (email: string) =>
+  apiFetch<{ message: string }>('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+
+

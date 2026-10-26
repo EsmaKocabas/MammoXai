@@ -4,9 +4,15 @@ import jwt from 'jsonwebtoken';
 import { pool } from '../config/db.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { validatePassword } from '../utils/validation.js';
+import crypto from 'node:crypto';
+import { sendPasswordResetEmail } from '../lib/mailer.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'gizli_anahtarim';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+const validatePhone = (phone: unknown): phone is string => {
+  return typeof phone === 'string' && /^\+[1-9]\d{7,14}$/.test(phone);
+};
 
 // Kayıt Ol (Register - Doktor Kaydı)
 export const register = async (req: Request, res: Response): Promise<void> => {
@@ -36,6 +42,16 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     ) {
       res.status(400).json({
         error: 'Tüm alanların doldurulması zorunludur: E-posta, şifre, isim, unvan, uzmanlık alanı, hastane ve telefon boş bırakılamaz.',
+      });
+      return;
+    }
+
+    // Telefon format kontrolü
+    const normalizedPhone = phone.trim();
+
+    if (!validatePhone(normalizedPhone)) {
+      res.status(400).json({
+        error: 'Geçersiz telefon numarası. Ülke koduyla birlikte girin. Örnek: +905321234567',
       });
       return;
     }
@@ -90,7 +106,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       title.trim(),
       specialty.trim(),
       hospital.trim(),
-      phone.trim(),
+      normalizedPhone,
     ]);
 
     const newDoctor = result.rows[0];
@@ -225,7 +241,16 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
       current_password,
       new_password,
     } = req.body;
-
+    // Telefon numarasını her profil güncellemesinde doğrula
+    if (phone !== undefined) {
+      if (typeof phone !== 'string' || !validatePhone(phone.trim())) {
+        res.status(400).json({
+          error:
+            'Geçersiz telefon numarası. Ülke koduyla birlikte girin. Örnek: +905321234567',
+        });
+        return;
+      }
+    }
     // Şifre değiştirme talebi varsa mevcut şifreyi doğrula
     let newPasswordHash: string | null = null;
     if (new_password) {
@@ -261,7 +286,7 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
     if (title !== undefined) updates.title = title ? title.trim() : null;
     if (specialty !== undefined) updates.specialty = specialty ? specialty.trim() : null;
     if (hospital !== undefined) updates.hospital = hospital ? hospital.trim() : null;
-    if (phone !== undefined) updates.phone = phone ? phone.trim() : null;
+    if (phone !== undefined) { updates.phone = phone.trim(); }
     if (profile_photo_url !== undefined) updates.profile_photo_url = profile_photo_url ? profile_photo_url.trim() : null;
     if (newPasswordHash) updates.password_hash = newPasswordHash;
 
@@ -293,5 +318,185 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
   } catch (error) {
     console.error('[UpdateProfile Error]:', error);
     res.status(500).json({ error: 'Profil güncellenirken sunucu hatası oluştu.' });
+  }
+};
+// Şifre Sıfırlama E-postası İste
+export const forgotPassword = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  const genericMessage =
+    'Eğer bu e-posta adresi sistemimizde kayıtlıysa şifre sıfırlama bağlantısı gönderilecektir.';
+
+  try {
+    const email =
+      typeof req.body?.email === 'string'
+        ? req.body.email.trim().toLowerCase()
+        : '';
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(email)) {
+      res.status(200).json({ message: genericMessage });
+      return;
+    }
+
+    const result = await pool.query(
+      'SELECT id, email FROM doctors WHERE LOWER(email) = $1 LIMIT 1',
+      [email],
+    );
+
+    if (result.rows.length > 0) {
+      const doctor = result.rows[0];
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+      await pool.query(
+        `UPDATE password_reset_tokens
+         SET used_at = NOW()
+         WHERE doctor_id = $1 AND used_at IS NULL`,
+        [doctor.id],
+      );
+
+      await pool.query(
+        `INSERT INTO password_reset_tokens (doctor_id, token, expires_at)
+         VALUES ($1, $2, $3)`,
+        [doctor.id, tokenHash, expiresAt],
+      );
+
+      const frontendUrl = process.env.FRONTEND_URL;
+      if (!frontendUrl) throw new Error('FRONTEND_URL tanımlanmamış.');
+
+      const resetUrl = new URL('/reset-password', frontendUrl);
+      resetUrl.searchParams.set('token', rawToken);
+
+      await sendPasswordResetEmail(doctor.email, resetUrl.toString());
+    }
+
+    res.status(200).json({ message: genericMessage });
+  } catch (error) {
+    console.error('[ForgotPassword Error]:', error);
+    res.status(500).json({
+      error: 'Şifre sıfırlama isteği işlenirken bir sunucu hatası oluştu.',
+    });
+  }
+};
+
+// Token ile yeni şifre belirle
+export const resetPassword = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const token =
+      typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+    const password =
+      typeof req.body?.password === 'string' ? req.body.password : '';
+
+    if (!token || !password) {
+      res.status(400).json({
+        error: 'Sıfırlama tokenı ve yeni şifre zorunludur.',
+      });
+      return;
+    }
+
+    const passValidation = validatePassword(password);
+    if (!passValidation.valid) {
+      res.status(400).json({ error: passValidation.message });
+      return;
+    }
+
+    // E-postadaki ham token ile veritabanındaki hash eşleştirilir.
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+
+    // Token geçerli, süresi dolmamış ve daha önce kullanılmamış olmalı.
+    const tokenResult = await pool.query(
+      `SELECT id, doctor_id
+       FROM password_reset_tokens
+       WHERE token = $1
+         AND expires_at > NOW()
+         AND used_at IS NULL
+       LIMIT 1`,
+      [tokenHash],
+    );
+
+    if (tokenResult.rows.length === 0) {
+      res.status(400).json({
+        error: 'Sıfırlama bağlantısı geçersiz veya süresi dolmuş. Lütfen yeni bir bağlantı isteyin.',
+      });
+      return;
+    }
+
+    const resetRecord = tokenResult.rows[0];
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Token'ın aynı anda iki kez kullanılmasını engellemek için transaction.
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const lockedToken = await client.query(
+        `SELECT id, doctor_id
+         FROM password_reset_tokens
+         WHERE id = $1
+           AND expires_at > NOW()
+           AND used_at IS NULL
+         FOR UPDATE`,
+        [resetRecord.id],
+      );
+
+      if (lockedToken.rows.length === 0) {
+        await client.query('ROLLBACK');
+        res.status(400).json({
+          error: 'Bu bağlantı artık kullanılamıyor. Lütfen yeni bir bağlantı isteyin.',
+        });
+        return;
+      }
+
+      await client.query(
+        `UPDATE doctors
+         SET password_hash = $1
+         WHERE id = $2`,
+        [passwordHash, resetRecord.doctor_id],
+      );
+
+      await client.query(
+        `UPDATE password_reset_tokens
+         SET used_at = NOW()
+         WHERE id = $1`,
+        [resetRecord.id],
+      );
+
+      // Diğer aktif sıfırlama bağlantılarını da geçersiz kıl.
+      await client.query(
+        `UPDATE password_reset_tokens
+         SET used_at = NOW()
+         WHERE doctor_id = $1
+           AND id <> $2
+           AND used_at IS NULL`,
+        [resetRecord.doctor_id, resetRecord.id],
+      );
+
+      await client.query('COMMIT');
+
+      res.status(200).json({
+        message: 'Şifreniz başarıyla yenilendi. Yeni şifrenizle giriş yapabilirsiniz.',
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('[ResetPassword Error]:', error);
+    res.status(500).json({
+      error: 'Şifre yenilenirken bir sunucu hatası oluştu.',
+    });
   }
 };

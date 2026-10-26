@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { register, saveSession, type RegisterData } from '../lib/api';
 import '../styles/auth.css';
+import { Eye, EyeOff } from 'lucide-react';
 
 const ChevronIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -28,16 +29,39 @@ export default function RegisterPage() {
     password: '',
   });
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleChange = (field: keyof RegisterData, value: string) => {
+    if (field === 'phone') {
+      // Yalnızca rakamlar ve en başta tek bir + işareti.
+      value = value.replace(/[^\d+]/g, '');
+
+      if (value.includes('+')) {
+        value = '+' + value.replace(/\+/g, '');
+      }
+
+      // E.164 biçimi: + ve en fazla 15 rakam.
+      value = value.slice(0, 16);
+    }
+
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+
+    const normalizedPhone = formData.phone.trim();
+
+    if (!/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
+      setError(
+        'Geçerli bir telefon numarası girin. Ülke kodu zorunludur. Örnek: +905321234567'
+      );
+      return;
+    }
 
     // Temel istemci doğrulamaları
     if (formData.password !== passwordConfirm) {
@@ -56,7 +80,7 @@ export default function RegisterPage() {
         ...formData,
         full_name: formData.full_name.trim(),
         hospital: formData.hospital.trim(),
-        phone: formData.phone.trim(),
+        phone: normalizedPhone,
         email: formData.email.trim(),
       });
       // Başarılı kayıtta otomatik oturum aç ve dashboard'a yönlendir
@@ -159,11 +183,19 @@ export default function RegisterPage() {
               <input
                 id="reg-phone"
                 type="tel"
-                placeholder="+90 532 123 45 67"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="+905321234567"
                 value={formData.phone}
                 onChange={(e) => handleChange('phone', e.target.value)}
+                pattern="\+[1-9][0-9]{7,14}"
+                title="Ülke koduyla birlikte girin. Örnek: +905321234567"
+                maxLength={16}
                 required
               />
+              <small style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                Ülke koduyla birlikte girin. Örnek: +905321234567
+              </small>
             </div>
           </div>
 
@@ -174,13 +206,21 @@ export default function RegisterPage() {
               <div className="input-with-icon">
                 <input
                   id="reg-pass"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
                   placeholder="••••••••"
                   value={formData.password}
                   onChange={(e) => handleChange('password', e.target.value)}
                   required
                 />
-                <span className="input-icon"><LockIcon /></span>
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword((previous) => !previous)}
+                  aria-label={showPassword ? 'Şifreyi gizle' : 'Şifreyi göster'}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
 
@@ -189,13 +229,27 @@ export default function RegisterPage() {
               <div className="input-with-icon">
                 <input
                   id="reg-pass-confirm"
-                  type="password"
+                  type={showPasswordConfirm ? 'text' : 'password'}
+                  autoComplete="new-password"
                   placeholder="••••••••"
                   value={passwordConfirm}
                   onChange={(e) => setPasswordConfirm(e.target.value)}
                   required
                 />
-                <span className="input-icon"><LockIcon /></span>
+
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPasswordConfirm((prev) => !prev)}
+                  aria-label={
+                    showPasswordConfirm
+                      ? 'Şifre tekrarını gizle'
+                      : 'Şifre tekrarını göster'
+                  }
+                  aria-pressed={showPasswordConfirm}
+                >
+                  {showPasswordConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
           </div>
@@ -237,6 +291,6 @@ export default function RegisterPage() {
           Bu platform tanı koymaz; sağlık profesyonellerine klinik karar desteği sağlar.
         </p>
       </section>
-    </main>
+    </main >
   );
 }

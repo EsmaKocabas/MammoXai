@@ -38,6 +38,7 @@
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -150,6 +151,37 @@
 }
 
 .input-with-icon {
+
+  .password-toggle {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    z-index: 2;
+  }
+
+  .password-toggle:hover {
+    color: var(--color-text);
+  }
+
+  .password-toggle:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  .input-with-icon input {
+    padding-right: 44px;
+  }
+
   position: relative;
 }
 
