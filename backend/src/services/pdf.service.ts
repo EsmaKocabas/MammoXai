@@ -65,13 +65,29 @@ export const generateAnalysisPdfBuffer = async (data: ReportData): Promise<Buffe
     doc.on('end', () => resolve(Buffer.concat(buffers)));
     doc.on('error', (err) => reject(err));
 
-    // UTF-8 Türkçe desteği için font ayarı (Windows Arial veya standart Helvetica fallback)
-    const winArialRegular = 'C:\\Windows\\Fonts\\arial.ttf';
-    const winArialBold = 'C:\\Windows\\Fonts\\arialbd.ttf';
-    const hasArial = fs.existsSync(winArialRegular);
+    // UTF-8 Türkçe desteği için platform font kontrolü (macOS, Windows, Linux)
+    const findFont = (candidates: string[], fallback: string): string => {
+      for (const p of candidates) {
+        if (fs.existsSync(p)) return p;
+      }
+      return fallback;
+    };
 
-    const fontRegular = hasArial ? winArialRegular : 'Helvetica';
-    const fontBold = (hasArial && fs.existsSync(winArialBold)) ? winArialBold : 'Helvetica-Bold';
+    const fontRegular = findFont([
+      '/System/Library/Fonts/Supplemental/Arial.ttf',
+      '/Library/Fonts/Arial.ttf',
+      'C:\\Windows\\Fonts\\arial.ttf',
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+      '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+    ], 'Helvetica');
+
+    const fontBold = findFont([
+      '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+      '/Library/Fonts/Arial Bold.ttf',
+      'C:\\Windows\\Fonts\\arialbd.ttf',
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+      '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+    ], 'Helvetica-Bold');
 
     const { analysis, doctor } = data;
     const patient = analysis.patient;
