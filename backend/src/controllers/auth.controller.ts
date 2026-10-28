@@ -320,6 +320,29 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
     res.status(500).json({ error: 'Profil güncellenirken sunucu hatası oluştu.' });
   }
 };
+
+// Doktor Profilini / Hesabını Silme (DELETE /api/auth/profile)
+export const deleteAccount = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const doctorId = req.user?.id;
+    if (!doctorId) {
+      res.status(401).json({ error: 'Yetkisiz erişim.' });
+      return;
+    }
+
+    // Hesabı pasife al ve varsa şifre sıfırlama tokenlarını temizle
+    await pool.query('UPDATE doctors SET is_active = FALSE WHERE id = $1', [doctorId]);
+    await pool.query('DELETE FROM password_reset_tokens WHERE doctor_id = $1', [doctorId]);
+
+    res.json({
+      message: 'Hesabınız başarıyla silindi ve oturumunuz sonlandırıldı.',
+    });
+  } catch (error) {
+    console.error('[DeleteAccount Error]:', error);
+    res.status(500).json({ error: 'Hesap silinirken sunucu hatası oluştu.' });
+  }
+};
+
 // Şifre Sıfırlama E-postası İste
 export const forgotPassword = async (
   req: Request,
