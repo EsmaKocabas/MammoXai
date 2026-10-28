@@ -27,7 +27,12 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
        -- Risk dağılımı
        (SELECT COUNT(*) FROM analyses WHERE doctor_id = $1 AND risk_level = 'Yüksek risk')::int AS high_risk_count,
        (SELECT COUNT(*) FROM analyses WHERE doctor_id = $1 AND risk_level = 'İnceleniyor')::int AS medium_risk_count,
-       (SELECT COUNT(*) FROM analyses WHERE doctor_id = $1 AND risk_level = 'Düşük risk')::int AS low_risk_count`,
+       (SELECT COUNT(*) FROM analyses WHERE doctor_id = $1 AND risk_level = 'Düşük risk')::int AS low_risk_count,
+
+       -- Dinamik dönem hesapları
+       (SELECT COUNT(*) FROM analyses WHERE doctor_id = $1 AND created_at >= date_trunc('month', NOW()))::int AS this_month_analyses,
+       (SELECT COUNT(*) FROM analyses WHERE doctor_id = $1 AND is_reviewed = FALSE AND created_at >= date_trunc('day', NOW()))::int AS today_awaiting_review,
+       (SELECT COUNT(*) FROM analyses WHERE doctor_id = $1 AND is_reviewed = FALSE AND risk_level = 'Yüksek risk')::int AS urgent_pending_count`,
     [doctorId]
   );
 
@@ -36,6 +41,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
   // Son 5 analiz (hızlı özet)
   const recentResult = await pool.query(
     `SELECT a.id, a.protocol_no, a.status, a.risk_level, a.classification_label,
+            a.malignancy_probability, a.model_confidence,
             a.is_reviewed, a.created_at,
             p.first_name || ' ' || p.last_name AS patient_name
      FROM analyses a

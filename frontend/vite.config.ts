@@ -1,9 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 // Geliştirmede /api ve /uploads isteklerini backend'e (5001) yönlendir
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    tailwindcss(),
+    react(),
+  ],
   server: {
     port: 5173,
     proxy: {
