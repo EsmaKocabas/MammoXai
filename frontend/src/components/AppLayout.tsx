@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -22,20 +22,43 @@ import {
   type Doctor,
   type AppNotification,
 } from '../lib/api';
-import { useToast } from './ToastContext';
+import { useToast, LOCAL_NOTIF_PREFIX } from './ToastContext';
 import '../styles/dashboard.css';
 
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { showToast } = useToast();
+  const {
+    showToast,
+    localNotifications,
+    refreshLocalNotifications,
+    markLocalNotificationAsRead,
+    markAllLocalNotificationsAsRead,
+  } = useToast();
   const [doctor, setDoctor] = useState<Doctor | null>(getDoctor());
 
   // Bildirim state'leri
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [serverNotifications, setServerNotifications] = useState<AppNotification[]>([]);
+  const [serverUnreadCount, setServerUnreadCount] = useState(0);
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Oturum açan doktora ait yerel (toast) bildirimleri yükle
+  useEffect(() => {
+    refreshLocalNotifications();
+  }, [doctor?.id, refreshLocalNotifications]);
+
+  // Backend bildirimleri + toast'lardan gelen yerel bildirimler (en yeni üstte)
+  const notifications = useMemo(
+    () =>
+      [...serverNotifications, ...localNotifications].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ),
+    [serverNotifications, localNotifications]
+  );
+
+  const unreadCount =
+    serverUnreadCount + localNotifications.filter((n) => !n.is_read).length;
 
   // Sayfa başlığı
   const getPageTitle = () => {
@@ -67,8 +90,8 @@ export default function AppLayout() {
   const loadNotifications = () => {
     fetchNotifications()
       .then((data) => {
-        setNotifications(data.notifications || []);
-        setUnreadCount(data.unread_count || 0);
+        setServerNotifications(data.notifications || []);
+        setServerUnreadCount(data.unread_count || 0);
       })
       .catch(() => undefined);
   };
@@ -95,13 +118,15 @@ export default function AppLayout() {
           if (payload.type === 'connected') return;
 
           // Yeni bildirim geldiğinde listeye ekle ve Toast uyarısı ver
-          setUnreadCount((prev) => prev + 1);
-          setNotifications((prev) => [payload, ...prev]);
+          setServerUnreadCount((prev) => prev + 1);
+          setServerNotifications((prev) => [payload, ...prev]);
 
+          // Backend'de zaten kayıtlı; yerel geçmişe tekrar yazma (persist: false)
           showToast(
             payload.title || 'Yeni Bildirim',
             payload.message || 'Sisteminizde yeni bir vaka güncellemesi var.',
-            payload.type === 'alert' ? 'alert' : 'info'
+            payload.type === 'alert' ? 'alert' : 'info',
+            { persist: false }
           );
         } catch {
           // SSE format uyuşmazlığı
@@ -133,14 +158,18 @@ export default function AppLayout() {
 
   const handleMarkAsRead = async (notif: AppNotification) => {
     if (!notif.is_read) {
-      try {
-        await markNotificationAsRead(notif.id);
-        setNotifications((prev) =>
-          prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
-        );
-        setUnreadCount((prev) => Math.max(0, prev - 1));
-      } catch {
-        // Hata durumunda yoksay
+      if (notif.id.startsWith(LOCAL_NOTIF_PREFIX)) {
+        markLocalNotificationAsRead(notif.id);
+      } else {
+        try {
+          await markNotificationAsRead(notif.id);
+          setServerNotifications((prev) =>
+            prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+          );
+          setServerUnreadCount((prev) => Math.max(0, prev - 1));
+        } catch {
+          // Hata durumunda yoksay
+        }
       }
     }
 
@@ -151,10 +180,12 @@ export default function AppLayout() {
   };
 
   const handleMarkAllRead = async () => {
+    markAllLocalNotificationsAsRead();
+    if (serverUnreadCount === 0) return;
     try {
       await markAllNotificationsAsRead();
-      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-      setUnreadCount(0);
+      setServerNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      setServerUnreadCount(0);
     } catch {
       // Hata durumunda yoksay
     }
@@ -325,8 +356,8 @@ export default function AppLayout() {
                         className={`notification-item ${!n.is_read ? 'unread' : ''}`}
                         onClick={() => handleMarkAsRead(n)}
                       >
-                        <div className={`notification-icon ${n.type === 'alert' ? 'alert' : 'info'}`}>
-                          {n.type === 'alert' ? (
+                        <div className={`notification-icon ${n.type === 'alert' || n.type === 'warning' ? 'alert' : 'info'}`}>
+                          {n.type === 'alert' || n.type === 'warning' ? (
                             <AlertTriangle size={16} />
                           ) : (
                             <CheckCircle2 size={16} />

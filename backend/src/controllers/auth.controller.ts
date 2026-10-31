@@ -18,6 +18,7 @@ const validatePhone = (phone: unknown): phone is string => {
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
     const {
+      tc_no,
       email,
       password,
       full_name,
@@ -32,6 +33,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     // Tüm alanların doldurulması zorunludur (hiçbiri boş bırakılamaz)
     if (
+      !tc_no?.trim() ||
       !email?.trim() ||
       !password ||
       !doctorName?.trim() ||
@@ -41,8 +43,22 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       !phone?.trim()
     ) {
       res.status(400).json({
-        error: 'Tüm alanların doldurulması zorunludur: E-posta, şifre, isim, unvan, uzmanlık alanı, hastane ve telefon boş bırakılamaz.',
+        error: 'Tüm alanların doldurulması zorunludur: TC Kimlik No, e-posta, şifre, isim, unvan, uzmanlık alanı, hastane ve telefon boş bırakılamaz.',
       });
+      return;
+    }
+
+    // TC Kimlik No kontrolü (11 hane kuralı ve benzersizlik)
+    const cleanTc = tc_no.trim();
+    if (!/^[1-9]\d{10}$/.test(cleanTc)) {
+      res.status(400).json({
+        error: 'TC Kimlik No 11 haneli olmalı, 0 ile başlamamalı ve yalnızca rakamlardan oluşmalıdır.',
+      });
+      return;
+    }
+    const existingTc = await pool.query('SELECT id FROM doctors WHERE tc_no = $1', [cleanTc]);
+    if (existingTc.rows.length > 0) {
+      res.status(409).json({ error: 'Bu TC Kimlik No ile kayıtlı bir doktor zaten mevcut.' });
       return;
     }
 
@@ -87,6 +103,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     // Doctors tablosuna ekle
     const insertQuery = `
       INSERT INTO doctors (
+        tc_no,
         email, 
         password_hash, 
         full_name, 
@@ -95,11 +112,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         hospital, 
         phone
       ) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7) 
-      RETURNING id, email, full_name, title, specialty, hospital, phone, created_at
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+      RETURNING id, tc_no, email, full_name, title, specialty, hospital, phone, created_at
     `;
 
     const result = await pool.query(insertQuery, [
+      cleanTc,
       email.toLowerCase().trim(),
       passwordHash,
       doctorName.trim(),
@@ -141,7 +159,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     // Doktoru veritabanında bul
     const query = `
-      SELECT id, email, password_hash, full_name, title, specialty, hospital, phone, is_active 
+      SELECT id, tc_no, email, password_hash, full_name, title, specialty, hospital, phone, is_active 
       FROM doctors 
       WHERE LOWER(email) = LOWER($1)
     `;
@@ -202,7 +220,7 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
     }
 
     const query = `
-      SELECT id, email, full_name, title, specialty, hospital, phone, profile_photo_url, created_at, last_login_at
+      SELECT id, tc_no, email, full_name, title, specialty, hospital, phone, profile_photo_url, created_at, last_login_at
       FROM doctors 
       WHERE id = $1
     `;
@@ -232,6 +250,7 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const {
+      email,
       full_name,
       title,
       specialty,
@@ -241,6 +260,33 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
       current_password,
       new_password,
     } = req.body;
+
+    const updates: Record<string, any> = {};
+
+    // E-posta değiştirme kontrolü
+    if (email !== undefined) {
+      if (typeof email !== 'string') {
+        res.status(400).json({ error: 'Geçersiz e-posta formatı.' });
+        return;
+      }
+      const emailTrimmed = email.trim();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailTrimmed || !emailRegex.test(emailTrimmed)) {
+        res.status(400).json({ error: 'Lütfen geçerli bir e-posta adresi giriniz.' });
+        return;
+      }
+      const normalizedEmail = emailTrimmed.toLowerCase();
+      const dup = await pool.query(
+        'SELECT id FROM doctors WHERE LOWER(email) = LOWER($1) AND id != $2',
+        [normalizedEmail, doctorId]
+      );
+      if (dup.rows.length > 0) {
+        res.status(409).json({ error: 'Bu e-posta adresi başka bir hekim tarafından kullanılmaktadır.' });
+        return;
+      }
+      updates.email = normalizedEmail;
+    }
+
     // Telefon numarasını her profil güncellemesinde doğrula
     if (phone !== undefined) {
       if (typeof phone !== 'string' || !validatePhone(phone.trim())) {
@@ -281,7 +327,6 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     // Dinamik alan güncelleme
-    const updates: Record<string, any> = {};
     if (full_name !== undefined && full_name.trim()) updates.full_name = full_name.trim();
     if (title !== undefined) updates.title = title ? title.trim() : null;
     if (specialty !== undefined) updates.specialty = specialty ? specialty.trim() : null;
@@ -307,13 +352,26 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
       UPDATE doctors
       SET ${setClauses.join(', ')}
       WHERE id = $1
-      RETURNING id, email, full_name, title, specialty, hospital, phone, profile_photo_url, updated_at
+      RETURNING id, tc_no, email, full_name, title, specialty, hospital, phone, profile_photo_url, updated_at
     `;
 
     const result = await pool.query(updateQuery, values);
+    const updatedDoctor = result.rows[0];
+
+    // E-posta değiştiyse yeni token üret
+    let newToken: string | undefined;
+    if (updates.email) {
+      newToken = jwt.sign(
+        { id: updatedDoctor.id, email: updatedDoctor.email },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRES_IN as any }
+      );
+    }
+
     res.json({
       message: 'Profil bilgileri başarıyla güncellendi.',
-      doctor: result.rows[0],
+      doctor: updatedDoctor,
+      ...(newToken ? { token: newToken } : {}),
     });
   } catch (error) {
     console.error('[UpdateProfile Error]:', error);

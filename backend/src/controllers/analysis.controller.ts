@@ -9,14 +9,25 @@ import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { requestPrediction } from '../services/ai.service.js';
 import { createNotification } from '../services/notification.service.js';
 import { generateAnalysisPdfBuffer } from '../services/pdf.service.js';
-import { DATE_REGEX, dropEmptyStrings, formatZodError } from '../utils/validation.js';
+import { normalizeDate, dropEmptyStrings, formatZodError } from '../utils/validation.js';
 
 const createAnalysisSchema = z.object({
   patient_id: z.uuid('Geçersiz hasta ID.'),
   laterality: z.enum(['Sol', 'Sağ', 'İkili']).optional(),
   view_position: z.string().max(20).optional(), // örn. CC, MLO
   image_quality: z.string().max(20).optional(),
-  acquisition_date: z.string().regex(DATE_REGEX, 'Tarih YYYY-AA-GG formatında olmalıdır.').optional(),
+  acquisition_date: z.string().optional().transform((val, ctx) => {
+    if (!val) return undefined;
+    const normalized = normalizeDate(val);
+    if (!normalized) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Tarih gün, ay, yıl formatında olmalıdır (Örnek: 03.05.1985 veya 1985-05-03).',
+      });
+      return z.NEVER;
+    }
+    return normalized;
+  }),
   equipment_model: z.string().max(150).optional(),
 });
 

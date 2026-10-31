@@ -169,7 +169,19 @@ export default function PatientsPage() {
   const handleOpenDetail = (p: Patient) => {
     setSelectedPatient(p);
     setIsEditingPatient(false);
-    setEditFormData({ ...p });
+    let dob = '';
+    if (p.date_of_birth) {
+      const match = p.date_of_birth.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (match) {
+        dob = match[1];
+      } else {
+        const d = new Date(p.date_of_birth);
+        if (!isNaN(d.getTime())) {
+          dob = d.toISOString().slice(0, 10);
+        }
+      }
+    }
+    setEditFormData({ ...p, date_of_birth: dob });
     setEditModalError(null);
   };
 
@@ -196,7 +208,14 @@ export default function PatientsPage() {
 
     setSavingEdit(true);
     try {
-      const res = await updatePatient(selectedPatient.id, editFormData);
+      let dobToSend = editFormData.date_of_birth;
+      if (dobToSend && dobToSend.includes('T')) {
+        dobToSend = dobToSend.slice(0, 10);
+      }
+      const res = await updatePatient(selectedPatient.id, {
+        ...editFormData,
+        date_of_birth: dobToSend,
+      });
       setSelectedPatient(res.patient);
       setPatients((prev) => prev.map((p) => (p.id === res.patient.id ? res.patient : p)));
       setIsEditingPatient(false);
@@ -238,6 +257,18 @@ export default function PatientsPage() {
       return Math.abs(ageDate.getUTCFullYear() - 1970);
     } catch {
       return '-';
+    }
+  };
+
+  // Tarihi GG.AA.YYYY formatında biçimlendir
+  const formatDateTR = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch {
+      return dateStr;
     }
   };
 
@@ -437,7 +468,7 @@ export default function PatientsPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                   <User size={16} color="#00766c" style={{ flexShrink: 0 }} />
                   <span style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                    <strong>Yaş & Cinsiyet:</strong> {getAge(selectedPatient.date_of_birth)} yaş, {selectedPatient.gender}
+                    <strong>Doğum Tarihi & Yaş:</strong> {formatDateTR(selectedPatient.date_of_birth)} ({getAge(selectedPatient.date_of_birth)} yaş), {selectedPatient.gender}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
