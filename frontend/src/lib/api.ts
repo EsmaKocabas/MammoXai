@@ -5,6 +5,7 @@ const DOCTOR_KEY = 'mammoai_doctor';
 
 export interface Doctor {
   id: string;
+  tc_no?: string | null;
   email: string;
   full_name: string;
   title?: string | null;
@@ -50,6 +51,15 @@ export const updateStoredDoctor = (doctor: Doctor) => {
   }
   if (sessionStorage.getItem(DOCTOR_KEY)) {
     sessionStorage.setItem(DOCTOR_KEY, JSON.stringify(doctor));
+  }
+};
+
+export const updateStoredToken = (token: string) => {
+  if (localStorage.getItem(TOKEN_KEY)) {
+    localStorage.setItem(TOKEN_KEY, token);
+  }
+  if (sessionStorage.getItem(TOKEN_KEY)) {
+    sessionStorage.setItem(TOKEN_KEY, token);
   }
 };
 
@@ -99,6 +109,7 @@ export const login = (email: string, password: string) =>
   });
 
 export interface RegisterData {
+  tc_no: string;
   full_name: string;
   title: string;
   specialty: string;
@@ -125,6 +136,7 @@ export const getMe = () =>
   apiFetch<{ doctor: Doctor }>('/api/auth/me');
 
 export interface UpdateProfileData {
+  email?: string;
   full_name?: string;
   title?: string;
   specialty?: string;
@@ -135,7 +147,7 @@ export interface UpdateProfileData {
 }
 
 export const updateDoctorProfile = (data: UpdateProfileData) =>
-  apiFetch<{ message: string; doctor: Doctor }>('/api/auth/profile', {
+  apiFetch<{ message: string; doctor: Doctor; token?: string }>('/api/auth/profile', {
     method: 'PUT',
     body: JSON.stringify(data),
   });
@@ -266,6 +278,12 @@ export const fetchAnalyses = (patientId?: string, page: number = 1, limit: numbe
   if (patientId) query.set('patient_id', patientId);
   return apiFetch<{ analyses: AnalysisItem[]; page: number; limit: number }>(`/api/analyses?${query.toString()}`);
 };
+
+export const createAnalysis = (formData: FormData) =>
+  apiFetch<{ analysis: AnalysisItem }>('/api/analyses', {
+    method: 'POST',
+    body: formData,
+  });
 
 // --- BİLDİRİMLER (NOTIFICATIONS) ---
 export interface AppNotification {

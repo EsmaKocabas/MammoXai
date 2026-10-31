@@ -5,13 +5,23 @@ import { z } from 'zod';
 import { pool } from '../config/db.js';
 import { UPLOADS_DIR } from '../config/paths.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
-import { DATE_REGEX, formatZodError } from '../utils/validation.js';
+import { normalizeDate, formatZodError } from '../utils/validation.js';
 
 const createPatientSchema = z.object({
   tc_no: z.string().regex(/^[1-9]\d{10}$/, 'TC Kimlik No 11 haneli olmalı ve 0 ile başlamamalıdır.'),
   first_name: z.string().trim().min(1, 'Hasta adı boş bırakılamaz.').max(80),
   last_name: z.string().trim().min(1, 'Hasta soyadı boş bırakılamaz.').max(80),
-  date_of_birth: z.string().regex(DATE_REGEX, 'Doğum tarihi YYYY-AA-GG formatında olmalıdır.'),
+  date_of_birth: z.string({ message: 'Doğum tarihi zorunludur.' }).transform((val, ctx) => {
+    const normalized = normalizeDate(val);
+    if (!normalized) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Doğum tarihi gün, ay, yıl formatında olmalıdır (Örnek: 03.05.1985 veya 1985-05-03).',
+      });
+      return z.NEVER;
+    }
+    return normalized;
+  }),
   gender: z.enum(['Kadın', 'Erkek', 'Diğer'], { message: 'Cinsiyet seçimi zorunludur (Kadın, Erkek, Diğer).' }),
   phone: z.string().trim().min(1, 'Telefon numarası boş bırakılamaz.').max(20),
   email: z.string().trim().email('Geçerli bir e-posta adresi giriniz.'),

@@ -13,6 +13,7 @@ const ChevronIcon = () => (
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState<RegisterData>({
+    tc_no: '',
     full_name: '',
     title: 'Uzm. Dr.',
     specialty: 'Radyoloji',
@@ -28,6 +29,10 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
 
   const handleChange = (field: keyof RegisterData, value: string) => {
+    if (field === 'tc_no') {
+      value = value.replace(/\D/g, '').slice(0, 11);
+    }
+
     if (field === 'phone') {
       // Yalnızca rakamlar ve en başta tek bir + işareti.
       value = value.replace(/[^\d+]/g, '');
@@ -46,6 +51,17 @@ export default function RegisterPage() {
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+
+    // TC Kimlik No doğrulaması (zorunlu 11 hane kuralı)
+    const normalizedTc = formData.tc_no.trim();
+    if (!normalizedTc) {
+      setError('TC Kimlik No alanı zorunludur.');
+      return;
+    }
+    if (!/^[1-9]\d{10}$/.test(normalizedTc)) {
+      setError('TC Kimlik No 11 haneli olmalı, 0 ile başlamamalı ve yalnızca rakamlardan oluşmalıdır.');
+      return;
+    }
 
     const normalizedPhone = formData.phone.trim();
 
@@ -71,6 +87,7 @@ export default function RegisterPage() {
     try {
       const { token, doctor } = await register({
         ...formData,
+        tc_no: normalizedTc,
         full_name: formData.full_name.trim(),
         hospital: formData.hospital.trim(),
         phone: normalizedPhone,
@@ -129,8 +146,21 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          {/* Uzmanlık Alanı & Hastane */}
+          {/* TC Kimlik No & Uzmanlık Alanı */}
           <div className="form-grid">
+            <div className="field">
+              <label htmlFor="reg-tc">TC Kimlik No</label>
+              <input
+                id="reg-tc"
+                type="text"
+                maxLength={11}
+                placeholder="11 haneli TC kimlik no"
+                value={formData.tc_no}
+                onChange={(e) => handleChange('tc_no', e.target.value)}
+                required
+              />
+            </div>
+
             <div className="field">
               <label htmlFor="reg-specialty">Uzmanlık Alanı</label>
               <input
@@ -142,7 +172,10 @@ export default function RegisterPage() {
                 required
               />
             </div>
+          </div>
 
+          {/* Kurum / Hastane & E-posta */}
+          <div className="form-grid">
             <div className="field">
               <label htmlFor="reg-hospital">Kurum / Hastane</label>
               <input
@@ -154,10 +187,7 @@ export default function RegisterPage() {
                 required
               />
             </div>
-          </div>
 
-          {/* E-posta & Telefon */}
-          <div className="form-grid">
             <div className="field">
               <label htmlFor="reg-email">E-posta adresi</label>
               <input
@@ -170,26 +200,27 @@ export default function RegisterPage() {
                 required
               />
             </div>
+          </div>
 
-            <div className="field">
-              <label htmlFor="reg-phone">Telefon Numarası</label>
-              <input
-                id="reg-phone"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                placeholder="+905321234567"
-                value={formData.phone}
-                onChange={(e) => handleChange('phone', e.target.value)}
-                pattern="\+[1-9][0-9]{7,14}"
-                title="Ülke koduyla birlikte girin. Örnek: +905321234567"
-                maxLength={16}
-                required
-              />
-              <small style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                Ülke koduyla birlikte girin. Örnek: +905321234567
-              </small>
-            </div>
+          {/* Telefon Numarası */}
+          <div className="field">
+            <label htmlFor="reg-phone">Telefon Numarası</label>
+            <input
+              id="reg-phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="+905321234567"
+              value={formData.phone}
+              onChange={(e) => handleChange('phone', e.target.value)}
+              pattern="\+[1-9][0-9]{7,14}"
+              title="Ülke koduyla birlikte girin. Örnek: +905321234567"
+              maxLength={16}
+              required
+            />
+            <small style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+              Ülke koduyla birlikte girin. Örnek: +905321234567
+            </small>
           </div>
 
           {/* Şifre & Şifre Tekrarı */}
@@ -261,7 +292,7 @@ export default function RegisterPage() {
             id="register-submit"
             type="submit"
             className="btn-primary"
-            disabled={loading || !formData.full_name || !formData.email || !formData.password}
+            disabled={loading || !formData.tc_no || !formData.full_name || !formData.email || !formData.password}
           >
             {loading ? (
               <span className="spinner" aria-label="Hesap oluşturuluyor" />

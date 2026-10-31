@@ -17,6 +17,7 @@ import {
   deleteDoctorAccount,
   clearSession,
   updateStoredDoctor,
+  updateStoredToken,
   type Doctor,
   type UpdateProfileData,
 } from '../lib/api';
@@ -56,6 +57,7 @@ export default function DoctorProfilePage() {
 
   const [formData, setFormData] = useState({
     full_name: '',
+    tc_no: '',
     title: 'Uzm. Dr.',
     specialty: 'Radyoloji',
     hospital: '',
@@ -87,6 +89,7 @@ export default function DoctorProfilePage() {
         setDoctor(res.doctor);
         setFormData({
           full_name: (res.doctor.full_name || '').replace(/[^a-zA-ZçÇğĞıİöÖşŞüÜ\s]/g, ''),
+          tc_no: res.doctor.tc_no || '',
           title: res.doctor.title || 'Uzm. Dr.',
           specialty: (res.doctor.specialty || 'Radyoloji').replace(/[^a-zA-ZçÇğĞıİöÖşŞüÜ\s]/g, ''),
           hospital: (res.doctor.hospital || '').replace(/[^a-zA-ZçÇğĞıİöÖşŞüÜ\s]/g, ''),
@@ -168,7 +171,17 @@ export default function DoctorProfilePage() {
       return;
     }
 
-    // 6. Şifre değiştirme talebi kontrolü
+    // 6. E-posta doğrulaması
+    const emailTrimmed = formData.email.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailTrimmed || !emailRegex.test(emailTrimmed)) {
+      const err = 'Lütfen geçerli bir e-posta adresi giriniz.';
+      setErrorMsg(err);
+      showToast('Geçersiz E-posta', err, 'error');
+      return;
+    }
+
+    // 7. Şifre değiştirme talebi kontrolü
     if (passwords.new_password || passwords.current_password) {
       if (!passwords.current_password) {
         const err = 'Şifrenizi değiştirmek için mevcut şifrenizi girmelisiniz.';
@@ -203,6 +216,7 @@ export default function DoctorProfilePage() {
     setLoading(true);
     try {
       const payload: UpdateProfileData = {
+        email: emailTrimmed,
         full_name: nameTrimmed,
         title: titleTrimmed,
         specialty: specialtyTrimmed,
@@ -218,6 +232,9 @@ export default function DoctorProfilePage() {
       const res = await updateDoctorProfile(payload);
       setDoctor(res.doctor);
       updateStoredDoctor(res.doctor);
+      if (res.token) {
+        updateStoredToken(res.token);
+      }
       const okMsg = 'Profil bilgileriniz başarıyla güncellendi.';
       setSuccessMsg(okMsg);
       showToast('Profil Güncellendi', okMsg, 'success');
@@ -261,12 +278,12 @@ export default function DoctorProfilePage() {
 
   const initials = formData.full_name
     ? formData.full_name
-        .trim()
-        .split(/\s+/)
-        .map((p) => p[0])
-        .slice(0, 2)
-        .join('')
-        .toUpperCase()
+      .trim()
+      .split(/\s+/)
+      .map((p) => p[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase()
     : 'DR';
 
   return (
@@ -389,14 +406,28 @@ export default function DoctorProfilePage() {
                 />
               </div>
 
+              {/* TC Kimlik No (Değiştirilemez) */}
+              <div className="form-group">
+                <label htmlFor="prof-tc">TC Kimlik No (Değiştirilemez)</label>
+                <input
+                  id="prof-tc"
+                  type="text"
+                  value={formData.tc_no || 'Belirtilmemiş'}
+                  disabled
+                  style={{ background: '#f8fafc', color: '#64748b', cursor: 'not-allowed' }}
+                />
+              </div>
+
               {/* E-posta */}
               <div className="form-group">
-                <label htmlFor="prof-email">E-posta (Değiştirilemez)</label>
+                <label htmlFor="prof-email">E-posta Adresi</label>
                 <input
                   id="prof-email"
                   type="email"
+                  placeholder="doktor@mammoai.com"
                   value={formData.email}
-                  disabled
+                  onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
+                  required
                 />
               </div>
             </div>
@@ -406,7 +437,7 @@ export default function DoctorProfilePage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
                 <Shield size={18} color="#00766c" />
                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
-                  Şifre Değiştir (İsteğe Bağlı)
+                  Şifre Değiştir
                 </h3>
               </div>
 
