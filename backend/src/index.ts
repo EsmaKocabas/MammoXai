@@ -1,3 +1,4 @@
+
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -6,9 +7,11 @@ import dotenv from 'dotenv';
 import path from 'path';
 import multer from 'multer';
 import { fileURLToPath } from 'url';
+
 import { pool, initDatabase } from './config/db.js';
 import { UPLOADS_DIR } from './config/paths.js';
 import { UploadError } from './middlewares/upload.middleware.js';
+
 import authRoutes from './routes/auth.routes.js';
 import patientRoutes from './routes/patient.routes.js';
 import analysisRoutes from './routes/analysis.routes.js';
@@ -21,11 +24,10 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config();
 
-// Veritabanı tablolarının hazır olduğundan emin ol
-initDatabase().catch((err) => console.error('[DB Init Error]:', err));
+const PORT = Number(process.env.PORT) || 5001;
 
+// Express uygulamasını önce oluştur
 const app = express();
-const PORT = process.env.PORT || 5001;
 
 // Middlewares
 app.use(helmet());
@@ -37,7 +39,8 @@ app.use(morgan('dev'));
 app.use(
   '/uploads',
   express.static(UPLOADS_DIR, {
-    setHeaders: (res) => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
+    setHeaders: (res) =>
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
   })
 );
 
@@ -48,10 +51,11 @@ app.use('/api/analyses', analysisRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
 
-// Sağlık kontrolü & DB bağlantı testi
+// Sağlık kontrolü ve DB bağlantı testi
 app.get('/health', async (_req: Request, res: Response) => {
   try {
     const dbRes = await pool.query('SELECT NOW() as current_time');
+
     res.json({
       status: 'ok',
       service: 'MammoXai Backend API',
@@ -84,21 +88,42 @@ app.get('/', (_req: Request, res: Response) => {
   });
 });
 
-// Merkezi hata yakalayıcı (Express 5 async hataları da buraya düşer)
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  if (err instanceof multer.MulterError) {
-    const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
-    res.status(status).json({ error: `Dosya yükleme hatası: ${err.message}` });
-    return;
-  }
-  if (err instanceof UploadError) {
-    res.status(err.status).json({ error: err.message });
-    return;
-  }
-  console.error('[Unhandled Error]:', err);
-  res.status(500).json({ error: 'Sunucu hatası oluştu.' });
-});
+// Merkezi hata yakalayıcı
+app.use(
+  (err: any, _req: Request, res: Response, _next: NextFunction) => {
+    if (err instanceof multer.MulterError) {
+      const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      res.status(status).json({
+        error: `Dosya yükleme hatası: ${err.message}`,
+      });
+      return;
+    }
 
-app.listen(PORT, () => {
-  console.log(`[Server] MammoXai API http://localhost:${PORT} üzerinde çalışıyor.`);
-});
+    if (err instanceof UploadError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+
+    console.error('[Unhandled Error]:', err);
+    res.status(500).json({ error: 'Sunucu hatası oluştu.' });
+  }
+);
+
+// Önce veritabanını başlat, sonra HTTP sunucusunu aç
+async function startServer() {
+  try {
+    await initDatabase();
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(
+        `[Server] MammoXai API ${PORT} portunda çalışıyor.`
+      );
+    });
+  } catch (error) {
+    console.error('[Startup Error]', error);
+    process.exit(1);
+  }
+}
+
+// En son başlat
+startServer();

@@ -9,6 +9,7 @@ import {
   Bell,
   CheckCircle2,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import {
   clearSession,
@@ -18,6 +19,7 @@ import {
   fetchNotifications,
   markNotificationAsRead,
   markAllNotificationsAsRead,
+  deleteReadNotifications,
   getToken,
   type Doctor,
   type AppNotification,
@@ -34,6 +36,7 @@ export default function AppLayout() {
     refreshLocalNotifications,
     markLocalNotificationAsRead,
     markAllLocalNotificationsAsRead,
+    deleteReadLocalNotifications,
   } = useToast();
   const [doctor, setDoctor] = useState<Doctor | null>(getDoctor());
 
@@ -41,6 +44,7 @@ export default function AppLayout() {
   const [serverNotifications, setServerNotifications] = useState<AppNotification[]>([]);
   const [serverUnreadCount, setServerUnreadCount] = useState(0);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [isDeletingRead, setIsDeletingRead] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Oturum açan doktora ait yerel (toast) bildirimleri yükle
@@ -191,6 +195,26 @@ export default function AppLayout() {
     }
   };
 
+  const hasReadNotifications = useMemo(
+    () => notifications.some((n) => n.is_read),
+    [notifications]
+  );
+
+  const handleDeleteRead = async () => {
+    if (isDeletingRead) return;
+    setIsDeletingRead(true);
+    try {
+      deleteReadLocalNotifications();
+      await deleteReadNotifications().catch(() => undefined);
+      setServerNotifications((prev) => prev.filter((n) => !n.is_read));
+      showToast('Bildirimler Temizlendi', 'Okunmuş tüm bildirimler silindi.', 'info', { persist: false });
+    } catch {
+      // Hata durumunda yoksay
+    } finally {
+      setIsDeletingRead(false);
+    }
+  };
+
   const handleLogout = () => {
     clearSession();
     navigate('/login', { replace: true });
@@ -333,15 +357,29 @@ export default function AppLayout() {
               <div className="notifications-dropdown">
                 <div className="dropdown-header">
                   <h4>Bildirimler</h4>
-                  {unreadCount > 0 && (
-                    <button
-                      type="button"
-                      className="mark-all-btn"
-                      onClick={handleMarkAllRead}
-                    >
-                      Tümünü okundu işaretle
-                    </button>
-                  )}
+                  <div className="dropdown-header-actions">
+                    {unreadCount > 0 && (
+                      <button
+                        type="button"
+                        className="mark-all-btn"
+                        onClick={handleMarkAllRead}
+                      >
+                        Tümünü okundu işaretle
+                      </button>
+                    )}
+                    {hasReadNotifications && (
+                      <button
+                        type="button"
+                        className="delete-read-btn"
+                        onClick={handleDeleteRead}
+                        disabled={isDeletingRead}
+                        title="Okunmuş bildirimleri sil"
+                      >
+                        <Trash2 size={12} />
+                        <span>Okunmuş bildirimleri sil</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="notifications-list">

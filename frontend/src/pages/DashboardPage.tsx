@@ -373,13 +373,7 @@ export default function DashboardPage() {
         <div className="stat-card">
           <div className="stat-info">
             <span className="stat-label">Analiz bekleyen</span>
-            <span className="stat-value">
-              {loading
-                ? '—'
-                : pendingCount < 10
-                ? `0${pendingCount}`
-                : pendingCount}
-            </span>
+            <span className="stat-value">{loading ? '—' : pendingCount}</span>
             <span className="stat-subtext">{loading ? '...' : pendingText}</span>
           </div>
           <div className="stat-icon-wrapper amber">

@@ -78,6 +78,10 @@ export default function PatientsPage() {
   const [editModalError, setEditModalError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Silme Onay Modal State'leri
+  const [patientToDelete, setPatientToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deletingPatient, setDeletingPatient] = useState(false);
+
   // Yeni Hasta Modal State'leri
   const [showAddModal, setShowAddModal] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -233,17 +237,23 @@ export default function PatientsPage() {
     }
   };
 
-  // Hasta Silme
-  const handleDeletePatient = async (id: string, name: string) => {
-    if (!confirm(`${name} isimli hastayı silmek istediğinizden emin misiniz?`)) return;
+  // Hasta Silme Onayı
+  const handleConfirmDeletePatient = async () => {
+    if (!patientToDelete) return;
+    setDeletingPatient(true);
     try {
-      await deletePatient(id);
-      setPatients(patients.filter((p) => p.id !== id));
-      if (selectedPatient?.id === id) setSelectedPatient(null);
-      showToast('Hasta Silindi', `${name} başarıyla sistemden kaldırıldı.`, 'success');
+      await deletePatient(patientToDelete.id);
+      setPatients((prev) => prev.filter((p) => p.id !== patientToDelete.id));
+      if (selectedPatient?.id === patientToDelete.id) {
+        setSelectedPatient(null);
+      }
+      showToast('Hasta Silindi', `${patientToDelete.name} başarıyla sistemden kaldırıldı.`, 'success');
+      setPatientToDelete(null);
     } catch (err: any) {
       const errorMsg = err.message || 'Hasta silinemedi.';
       showToast('Silme Başarısız', errorMsg, 'error');
+    } finally {
+      setDeletingPatient(false);
     }
   };
 
@@ -386,7 +396,12 @@ export default function PatientsPage() {
                             type="button"
                             className="btn-danger"
                             style={{ padding: '6px 10px', fontSize: 12 }}
-                            onClick={() => handleDeletePatient(p.id, `${p.first_name} ${p.last_name}`)}
+                            onClick={() =>
+                              setPatientToDelete({
+                                id: p.id,
+                                name: `${p.first_name} ${p.last_name}`,
+                              })
+                            }
                             title="Hastayı Sil"
                           >
                             <Trash2 size={14} />
@@ -444,6 +459,23 @@ export default function PatientsPage() {
                   {isEditingPatient ? <RotateCcw size={14} /> : <Edit3 size={14} />}
                   <span>{isEditingPatient ? 'Vazgeç' : 'Düzenle'}</span>
                 </button>
+                {!isEditingPatient && (
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    style={{ padding: '6px 10px', fontSize: 12.5, borderRadius: 8 }}
+                    onClick={() =>
+                      setPatientToDelete({
+                        id: selectedPatient.id,
+                        name: `${selectedPatient.first_name} ${selectedPatient.last_name}`,
+                      })
+                    }
+                    title="Hastayı Sil"
+                  >
+                    <Trash2 size={14} />
+                    <span>Sil</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setSelectedPatient(null)}
@@ -837,6 +869,82 @@ export default function PatientsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Hasta Silme Onay Modalı - Sağına soluna tıklamalarda kapanmaz, sadece İptal ve Evet butonları etkilidir */}
+      {patientToDelete && (
+        <div className="modal-overlay">
+          <div
+            className="modal-card"
+            style={{
+              maxWidth: 440,
+              textAlign: 'center',
+              padding: '28px 24px',
+              borderRadius: 16,
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.05)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: '50%',
+                background: '#fee2e2',
+                color: '#dc2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+              }}
+            >
+              <Trash2 size={26} strokeWidth={2.2} />
+            </div>
+
+            <h3 style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
+              Hasta Kaydını Sil
+            </h3>
+
+            <p style={{ margin: '0 0 24px', fontSize: 14, color: '#64748b', lineHeight: 1.55 }}>
+              <strong style={{ color: '#1e293b' }}>{patientToDelete.name}</strong> isimli hastayı silmek istiyor musunuz?
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 12 }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{
+                  minWidth: 96,
+                  padding: '9px 20px',
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  borderRadius: 8,
+                }}
+                onClick={() => {
+                  if (!deletingPatient) setPatientToDelete(null);
+                }}
+                disabled={deletingPatient}
+              >
+                İptal
+              </button>
+              <button
+                type="button"
+                className="btn-danger"
+                style={{
+                  minWidth: 96,
+                  padding: '9px 20px',
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  borderRadius: 8,
+                }}
+                onClick={handleConfirmDeletePatient}
+                disabled={deletingPatient}
+              >
+                {deletingPatient ? 'Siliniyor...' : 'Evet'}
+              </button>
+            </div>
           </div>
         </div>
       )}
