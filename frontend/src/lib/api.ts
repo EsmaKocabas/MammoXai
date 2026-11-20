@@ -306,3 +306,8 @@ export const markNotificationAsRead = (id: string) =>
 
 export const markAllNotificationsAsRead = () =>
   apiFetch<{ message: string }>('/api/notifications/read-all', { method: 'PUT' });
+
+export const deleteReadNotifications = () =>
+  apiFetch<{ message: string; deleted_count?: number }>('/api/notifications/read', {
+    method: 'DELETE',
+  });

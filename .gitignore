@@ -37,6 +37,8 @@ env/
 *.pkl
 data/
 datasets/
+# Proje için gerekli olan eğitilmiş en iyi model ağırlığı
+!backend/ai_model/efficientnet_b4_binary_final_best.pth
 
 # IDE & Editor files
 .vscode/

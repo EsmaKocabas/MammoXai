@@ -25,6 +25,7 @@ interface ToastContextType {
   refreshLocalNotifications: () => void;
   markLocalNotificationAsRead: (id: string) => void;
   markAllLocalNotificationsAsRead: () => void;
+  deleteReadLocalNotifications: () => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -114,6 +115,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     updateLocal((prev) => prev.map((n) => (n.is_read ? n : { ...n, is_read: true, read_at: now })));
   }, [updateLocal]);
 
+  const deleteReadLocalNotifications = useCallback(() => {
+    updateLocal((prev) => prev.filter((n) => !n.is_read));
+  }, [updateLocal]);
+
   const getIcon = (type: ToastItem['type']) => {
     switch (type) {
       case 'success':
@@ -135,6 +140,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         refreshLocalNotifications,
         markLocalNotificationAsRead,
         markAllLocalNotificationsAsRead,
+        deleteReadLocalNotifications,
       }}
     >
       {children}

@@ -195,6 +195,20 @@ def read_root():
         "status": "ready" if MODEL_READY else "weights_missing",
         "device": str(device)
     }
+    
+@app.get("/health")
+def health():
+    if not MODEL_READY:
+        raise HTTPException(
+            status_code=503,
+            detail="AI model henüz hazır değil."
+        )
+
+    return {
+        "status": "healthy",
+        "model": "efficientnet_b4",
+        "device": str(device)
+    }
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):

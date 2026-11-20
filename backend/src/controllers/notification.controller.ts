@@ -97,6 +97,21 @@ export const markAllAsRead = async (req: AuthRequest, res: Response): Promise<vo
   res.json({ message: 'Tüm bildirimler okundu olarak işaretlendi.' });
 };
 
+// Okunmuş Bildirimleri Sil
+export const deleteReadNotifications = async (req: AuthRequest, res: Response): Promise<void> => {
+  const doctorId = req.user!.id;
+
+  const result = await pool.query(
+    'DELETE FROM notifications WHERE doctor_id = $1 AND is_read = TRUE RETURNING id',
+    [doctorId]
+  );
+
+  res.json({
+    message: 'Okunmuş bildirimler silindi.',
+    deleted_count: result.rowCount ?? result.rows.length,
+  });
+};
+
 // Bildirimi Sil
 export const deleteNotification = async (req: AuthRequest, res: Response): Promise<void> => {
   const id = z.uuid().safeParse(req.params.id);

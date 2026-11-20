@@ -897,8 +897,8 @@
   position: absolute;
   top: 52px;
   right: 0;
-  width: 360px;
-  max-width: 90vw;
+  width: 380px;
+  max-width: 92vw;
   background: #ffffff;
   border: 1px solid var(--color-dash-border);
   border-radius: 16px;
@@ -925,6 +925,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .dropdown-header h4 {
@@ -934,11 +936,18 @@
   color: #0f172a;
 }
 
+.dropdown-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .mark-all-btn {
   background: none;
   border: none;
   color: #00766c;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
   padding: 0;
@@ -946,6 +955,30 @@
 
 .mark-all-btn:hover {
   text-decoration: underline;
+}
+
+.delete-read-btn {
+  background: none;
+  border: none;
+  color: #ef4444;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.15s ease;
+}
+
+.delete-read-btn:hover {
+  color: #b91c1c;
+  text-decoration: underline;
+}
+
+.delete-read-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .notifications-list {

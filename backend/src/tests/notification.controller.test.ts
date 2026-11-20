@@ -13,6 +13,7 @@ import {
     listNotifications,
     markAsRead,
     markAllAsRead,
+    deleteReadNotifications,
     deleteNotification,
 } from '../controllers/notification.controller.js';
 
@@ -143,6 +144,30 @@ describe('Notification controller', () => {
         expect(res.json).toHaveBeenCalledWith({
             message: 'Tüm bildirimler okundu olarak işaretlendi.',
         });
+    });
+
+    it('okunmuş bildirimleri siler', async () => {
+        queryMock.mockResolvedValueOnce({
+            rows: [{ id: 'notif-1' }, { id: 'notif-2' }],
+            rowCount: 2,
+        });
+
+        const req = mockRequest();
+        const res = mockResponse();
+
+        await deleteReadNotifications(req, res);
+
+        expect(queryMock).toHaveBeenCalledWith(
+            expect.stringContaining('is_read = TRUE'),
+            ['doctor-123'],
+        );
+
+        expect(res.json).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: 'Okunmuş bildirimler silindi.',
+                deleted_count: 2,
+            }),
+        );
     });
 
     it('bildirimi siler', async () => {
